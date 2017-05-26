@@ -116,8 +116,20 @@ trait ArrayableTrait
     public function toArray(array $fields = [], array $expand = [], $recursive = true)
     {
         $data = [];
-        foreach ($this->resolveFields($fields, $expand) as $field => $definition) {
-            $data[$field] = is_string($definition) ? $this->$definition : call_user_func($definition, $this, $field);
+        $extractedFields = $this->extractFields($fields);
+        $extractedExpand = $this->extractFields($expand);
+        foreach ($this->resolveFields($extractedFields, $extractedExpand) as $field => $definition) {
+            if (is_string($definition)) {
+                if ($this->$definition instanceof Arrayable) {
+                    $fields = $this->extractFieldRulesFor($fields, $definition);
+                    $expand = $this->extractFieldRulesFor($expand, $definition);
+                    $data[$field] = $this->$definition->toArray($fields, $expand, $recursive);
+                } else {
+                    $data[$field] = $this->$definition;
+                }
+            } else {
+                $data[$field] = call_user_func($definition, $this, $field);
+            }
         }
 
         if ($this instanceof Linkable) {
@@ -125,6 +137,55 @@ trait ArrayableTrait
         }
 
         return $recursive ? ArrayHelper::toArray($data) : $data;
+    }
+
+    /**
+     * Extract field names from field rules.
+     * Field rules are recursive fields separated by dots (.).
+     *
+     * This method will extract all the root fields from the firld rules.
+     * e.g: from "item.id" this method will extract "item".
+     *
+     * @param array $fieldRules The field rules requested for extraction
+     * @return array field names extracted from the field rules
+     */
+    public function extractFields(array $fieldRules)
+    {
+        $fields = [];
+
+        foreach ($fieldRules as $fieldRule) {
+            $fields[] = current(explode(".", $fieldRule, 2));
+        }
+
+        if (in_array('*', $fields, true)) {
+            $fields = [];
+        }
+
+        return array_unique($fields);
+    }
+
+    /**
+     * Extract field rules from a field rules collection for a given field
+     * Field rules are recursive fields separated by dots (.).
+     *
+     * This method will extract the sub field rules for the gien field.
+     * e.g.: from "item.item2.id", this method will extract "item2.id"
+     *
+     * @param array $fieldRules The field rules requested for extraction
+     * @param string the field for which we want to extract the field rules
+     * @return array field rules extracted for the given field
+     */
+    public function extractFieldRulesFor(array $fieldRules, string $field)
+    {
+        $result = [];
+
+        foreach ($fieldRules as $fieldRule) {
+            if (0 === strpos($fieldRule, "$field.")) {
+                $result[] = preg_replace("/^{$field}\./i", '', $fieldRule);
+            }
+        }
+
+        return array_unique($result);
     }
 
     /**
