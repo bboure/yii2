@@ -102,7 +102,7 @@ trait ArrayableTrait
      *
      * This method will first identify which fields to be included in the resulting array by calling [[resolveFields()]].
      * It will then turn the model into an array with these fields. If `$recursive` is true,
-     * any embedded objects will also be converted into arrays.
+     * any embedded objects will also be converted into arrays and the related field rules wil lbe passed on.
      *
      * If the model implements the [[Linkable]] interface, the resulting array will also have a `_link` element
      * which refers to a list of links as specified by the interface.
@@ -116,14 +116,23 @@ trait ArrayableTrait
     public function toArray(array $fields = [], array $expand = [], $recursive = true)
     {
         $data = [];
-        $extractedFields = $this->extractFields($fields);
-        $extractedExpand = $this->extractFields($expand);
-        foreach ($this->resolveFields($extractedFields, $extractedExpand) as $field => $definition) {
+        foreach ($this->resolveFields($fields, $expand) as $field => $definition) {
             if (is_string($definition)) {
-                if ($this->$definition instanceof Arrayable) {
-                    $fields = $this->extractFieldRulesFor($fields, $definition);
-                    $expand = $this->extractFieldRulesFor($expand, $definition);
-                    $data[$field] = $this->$definition->toArray($fields, $expand, $recursive);
+                $nestedFields = $this->extractFieldRulesFor($fields, $definition);
+                $nestedExpand = $this->extractFieldRulesFor($expand, $definition);
+                if ($recursive && is_array($this->$definition)) {
+                    $data[$field] = array_map(
+                        function ($item) use ($nestedFields, $nestedExpand, $recursive) {
+                            if ($item instanceof Arrayable) {
+                                return $item->toArray($nestedFields, $nestedExpand, $recursive);
+                            } else {
+                                return $item;
+                            }
+                        },
+                        $this->$definition
+                    );
+                } elseif ($recursive && $this->$definition instanceof Arrayable) {
+                    $data[$field] = $this->$definition->toArray($nestedFields, $nestedExpand, $recursive);
                 } else {
                     $data[$field] = $this->$definition;
                 }
@@ -190,7 +199,8 @@ trait ArrayableTrait
 
     /**
      * Determines which fields can be returned by [[toArray()]].
-     * This method will check the requested fields against those declared in [[fields()]] and [[extraFields()]]
+     * This method will first extract the root fields from the given field rules.
+     * Then it will check the requested root fields against those declared in [[fields()]] and [[extraFields()]]
      * to determine which fields can be returned.
      * @param array $fields the fields being requested for exporting
      * @param array $expand the additional fields being requested for exporting
@@ -199,6 +209,8 @@ trait ArrayableTrait
      */
     protected function resolveFields(array $fields, array $expand)
     {
+        $fields = $this->extractFields($fields);
+        $expand = $this->extractFields($expand);
         $result = [];
 
         foreach ($this->fields() as $field => $definition) {

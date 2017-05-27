@@ -108,23 +108,14 @@ class SerializerTest extends TestCase
         ], $serializer->serialize($model));
     }
 
-    public function testRecursiveExpand()
+    public function testNestedExpand()
     {
         $serializer = new Serializer();
         $model = new TestModel();
         $model->extraField3 = new TestModel2();
 
         TestModel::$extraFields = ['extraField3'];
-
-        \Yii::$app->request->setQueryParams(['expand' => 'extraField3']);
-        $this->assertSame([
-            'field1' => 'test',
-            'field2' => 2,
-            'extraField3' => [
-                'field3' => 'test2',
-                'field4' => 8,
-            ],
-        ], $serializer->serialize($model));
+        TestModel2::$extraFields = ['extraField4'];
 
         \Yii::$app->request->setQueryParams(['expand' => 'extraField3.extraField4']);
         $this->assertSame([
@@ -146,6 +137,12 @@ class SerializerTest extends TestCase
 
         TestModel::$extraFields = ['extraField3'];
 
+        \Yii::$app->request->setQueryParams([]);
+        $this->assertSame([
+            'field1' => 'test',
+            'field2' => 2,
+        ], $serializer->serialize($model));
+
         \Yii::$app->request->setQueryParams(['fields' => '*']);
         $this->assertSame([
             'field1' => 'test',
@@ -166,6 +163,18 @@ class SerializerTest extends TestCase
             ],
         ], $serializer->serialize($model));
 
+        \Yii::$app->request->setQueryParams(
+            [
+                'fields' => 'extraField3.*',
+                'expand' => 'extraField3',
+            ]
+        );
+        $this->assertSame([
+            'extraField3' => [
+                'field3' => 'test2',
+                'field4' => 8,
+            ],
+        ], $serializer->serialize($model));
 
         \Yii::$app->request->setQueryParams(
             [
@@ -178,6 +187,64 @@ class SerializerTest extends TestCase
                 'field3' => 'test2',
                 'field4' => 8,
                 'extraField4' => 'testExtra2',
+            ],
+        ], $serializer->serialize($model));
+
+        $model->extraField3 = [
+            new TestModel2(),
+            new TestModel2(),
+        ];
+
+        \Yii::$app->request->setQueryParams(
+            [
+                'fields' => 'extraField3.*',
+                'expand' => 'extraField3',
+            ]
+        );
+        $this->assertSame([
+            'extraField3' => [
+                [
+                    'field3' => 'test2',
+                    'field4' => 8,
+                ],
+                [
+                    'field3' => 'test2',
+                    'field4' => 8,
+                ],
+            ],
+        ], $serializer->serialize($model));
+
+        \Yii::$app->request->setQueryParams(
+            [
+                'fields' => '*,extraField3.*',
+                'expand' => 'extraField3',
+            ]
+        );
+        $this->assertSame([
+            'field1' => 'test',
+            'field2' => 2,
+            'extraField3' => [
+                [
+                    'field3' => 'test2',
+                    'field4' => 8,
+                ],
+                [
+                    'field3' => 'test2',
+                    'field4' => 8,
+                ],
+            ],
+        ], $serializer->serialize($model));
+
+        \Yii::$app->request->setQueryParams(
+            [
+                'fields' => 'extraField3.field3',
+                'expand' => 'extraField3',
+            ]
+        );
+        $this->assertSame([
+            'extraField3' => [
+                ['field3' => 'test2'],
+                ['field3' => 'test2'],
             ],
         ], $serializer->serialize($model));
     }
@@ -370,7 +437,7 @@ class TestModel extends Model
 class TestModel2 extends Model
 {
     public static $fields = ['field3', 'field4'];
-    public static $extraFields = ['extraField4'];
+    public static $extraFields = [];
 
     public $field3 = 'test2';
     public $field4 = 8;
