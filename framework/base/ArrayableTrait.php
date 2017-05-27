@@ -102,12 +102,14 @@ trait ArrayableTrait
      *
      * This method will first identify which fields to be included in the resulting array by calling [[resolveFields()]].
      * It will then turn the model into an array with these fields. If `$recursive` is true,
-     * any embedded objects will also be converted into arrays and the related fields will be extracted and passed on.
+     * any embedded objects will also be converted into arrays.
+     * When embeded objects are [[Arrayable]], their respective nested fields will be extracted and passed to [[toArray()]].
      *
      * If the model implements the [[Linkable]] interface, the resulting array will also have a `_link` element
      * which refers to a list of links as specified by the interface.
      *
-     * @param array $fields the fields being requested. If empty or if it contains '*', all fields as specified by [[fields()]] will be returned.
+     * @param array $fields the fields being requested.
+     * If empty or if it contains '*', all fields as specified by [[fields()]] will be returned.
      * Fields can be nested, separeted with a dot (.): item.field-sub-field
      * $recursive must be true for this to work. If $recursive is false, only th root fields will be extracted
      * @param array $expand the additional fields being requested for exporting. Only fields declared in [[extraFields()]]
@@ -121,16 +123,16 @@ trait ArrayableTrait
     {
         $data = [];
         foreach ($this->resolveFields($fields, $expand) as $field => $definition) {
-            $data[$field] = is_string($definition) ? $this->$definition : call_user_func($definition, $this, $field);
+            $attribute = is_string($definition) ? $this->$definition : call_user_func($definition, $this, $field);
 
             if ($recursive) {
                 $nestedFields = $this->extractFieldsFor($fields, $field);
                 $nestedExpand = $this->extractFieldsFor($expand, $field);
                 if (!empty($nestedFields) || !empty($nestedExpand)) {
-                    if ($data[$field] instanceof Arrayable) {
-                        $data[$field] = $data[$field]->toArray($nestedFields, $nestedExpand);
-                    } elseif (is_array($data[$field])) {
-                        $data[$field] = array_map(
+                    if ($attribute instanceof Arrayable) {
+                        $attribute = $attribute->toArray($nestedFields, $nestedExpand);
+                    } elseif (is_array($attribute)) {
+                        $attribute = array_map(
                             function ($item) use ($nestedFields, $nestedExpand) {
                                 if ($item instanceof Arrayable) {
                                     return $item->toArray($nestedFields, $nestedExpand);
@@ -138,11 +140,12 @@ trait ArrayableTrait
                                     return $item;
                                 }
                             },
-                            $data[$field]
+                            $attribute
                         );
                     }
                 }
             }
+            $data[$field] = $attribute;
         }
 
         if ($this instanceof Linkable) {
@@ -154,7 +157,7 @@ trait ArrayableTrait
 
     /**
      * Extracts the root field names from nested fields.
-     * Nested fields are separated by dots (.).
+     * Nested fields are separated with dots (.).
      * e.g: "item.id"
      *
      * @param array $fields The fields requested for extraction
@@ -177,7 +180,7 @@ trait ArrayableTrait
 
     /**
      * Extract nested fields from a fields collection for a given root field
-     * Nested fields are separated by dots (.).
+     * Nested fields are separated with dots (.).
      * e.g: "item.id"
      *
      * @param array $fields The fields requested for extraction
