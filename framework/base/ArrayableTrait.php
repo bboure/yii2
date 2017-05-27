@@ -102,14 +102,18 @@ trait ArrayableTrait
      *
      * This method will first identify which fields to be included in the resulting array by calling [[resolveFields()]].
      * It will then turn the model into an array with these fields. If `$recursive` is true,
-     * any embedded objects will also be converted into arrays and the related field rules wil lbe passed on.
+     * any embedded objects will also be converted into arrays and the related fields will be extracted and passed on.
      *
      * If the model implements the [[Linkable]] interface, the resulting array will also have a `_link` element
      * which refers to a list of links as specified by the interface.
      *
-     * @param array $fields the fields being requested. If empty, all fields as specified by [[fields()]] will be returned.
+     * @param array $fields the fields being requested. If empty or if it contains '*', all fields as specified by [[fields()]] will be returned.
+     * Fields can be nested, separeted with a dot (.): item.field-sub-field
+     * $recursive must be true for this to work. If $recursive is false, only th root fields will be extracted
      * @param array $expand the additional fields being requested for exporting. Only fields declared in [[extraFields()]]
      * will be considered.
+     * Expand can also be nested, separeted with a dot (.): item.expand1.expand2
+     * $recursive must be true for this to work. If $recursive is false, only th root expands will be extracted
      * @param bool $recursive whether to recursively return array representation of embedded objects.
      * @return array the array representation of the object
      */
@@ -117,27 +121,27 @@ trait ArrayableTrait
     {
         $data = [];
         foreach ($this->resolveFields($fields, $expand) as $field => $definition) {
-            if (is_string($definition)) {
-                $nestedFields = $this->extractFieldRulesFor($fields, $definition);
-                $nestedExpand = $this->extractFieldRulesFor($expand, $definition);
-                if ($recursive && is_array($this->$definition)) {
-                    $data[$field] = array_map(
-                        function ($item) use ($nestedFields, $nestedExpand, $recursive) {
-                            if ($item instanceof Arrayable) {
-                                return $item->toArray($nestedFields, $nestedExpand, $recursive);
-                            } else {
-                                return $item;
-                            }
-                        },
-                        $this->$definition
-                    );
-                } elseif ($recursive && $this->$definition instanceof Arrayable) {
-                    $data[$field] = $this->$definition->toArray($nestedFields, $nestedExpand, $recursive);
-                } else {
-                    $data[$field] = $this->$definition;
+            $data[$field] = is_string($definition) ? $this->$definition : call_user_func($definition, $this, $field);
+
+            if ($recursive) {
+                $nestedFields = $this->extractFieldsFor($fields, $field);
+                $nestedExpand = $this->extractFieldsFor($expand, $field);
+                if (!empty($nestedFields) || !empty($nestedExpand)) {
+                    if ($data[$field] instanceof Arrayable) {
+                        $data[$field] = $data[$field]->toArray($nestedFields, $nestedExpand);
+                    } elseif (is_array($data[$field])) {
+                        $data[$field] = array_map(
+                            function ($item) use ($nestedFields, $nestedExpand) {
+                                if ($item instanceof Arrayable) {
+                                    return $item->toArray($nestedFields, $nestedExpand);
+                                } else {
+                                    return $item;
+                                }
+                            },
+                            $data[$field]
+                        );
+                    }
                 }
-            } else {
-                $data[$field] = call_user_func($definition, $this, $field);
             }
         }
 
@@ -149,48 +153,44 @@ trait ArrayableTrait
     }
 
     /**
-     * Extract field names from field rules.
-     * Field rules are recursive fields separated by dots (.).
+     * Extracts the root field names from nested fields.
+     * Nested fields are separated by dots (.).
+     * e.g: "item.id"
      *
-     * This method will extract all the root fields from the firld rules.
-     * e.g: from "item.id" this method will extract "item".
-     *
-     * @param array $fieldRules The field rules requested for extraction
-     * @return array field names extracted from the field rules
+     * @param array $fields The fields requested for extraction
+     * @return array field names extracted from the fields
      */
-    public function extractFields(array $fieldRules)
-    {
-        $fields = [];
-
-        foreach ($fieldRules as $fieldRule) {
-            $fields[] = current(explode(".", $fieldRule, 2));
-        }
-
-        if (in_array('*', $fields, true)) {
-            $fields = [];
-        }
-
-        return array_unique($fields);
-    }
-
-    /**
-     * Extract field rules from a field rules collection for a given field
-     * Field rules are recursive fields separated by dots (.).
-     *
-     * This method will extract the sub field rules for the gien field.
-     * e.g.: from "item.item2.id", this method will extract "item2.id"
-     *
-     * @param array $fieldRules The field rules requested for extraction
-     * @param string the field for which we want to extract the field rules
-     * @return array field rules extracted for the given field
-     */
-    public function extractFieldRulesFor(array $fieldRules, string $field)
+    public function extractRootFields(array $fields)
     {
         $result = [];
 
-        foreach ($fieldRules as $fieldRule) {
-            if (0 === strpos($fieldRule, "$field.")) {
-                $result[] = preg_replace("/^{$field}\./i", '', $fieldRule);
+        foreach ($fields as $field) {
+            $result[] = current(explode(".", $field, 2));
+        }
+
+        if (in_array('*', $result, true)) {
+            $result = [];
+        }
+
+        return array_unique($result);
+    }
+
+    /**
+     * Extract nested fields from a fields collection for a given root field
+     * Nested fields are separated by dots (.).
+     * e.g: "item.id"
+     *
+     * @param array $fields The fields requested for extraction
+     * @param string $rootField The root field for which we want to extract the nested fields
+     * @return array fields extracted for the given field
+     */
+    public function extractFieldsFor(array $fields, string $rootField)
+    {
+        $result = [];
+
+        foreach ($fields as $field) {
+            if (0 === strpos($field, "{$rootField}.")) {
+                $result[] = preg_replace("/^{$rootField}\./i", '', $field);
             }
         }
 
@@ -199,7 +199,7 @@ trait ArrayableTrait
 
     /**
      * Determines which fields can be returned by [[toArray()]].
-     * This method will first extract the root fields from the given field rules.
+     * This method will first extract the root fields from the given fields.
      * Then it will check the requested root fields against those declared in [[fields()]] and [[extraFields()]]
      * to determine which fields can be returned.
      * @param array $fields the fields being requested for exporting
@@ -209,8 +209,8 @@ trait ArrayableTrait
      */
     protected function resolveFields(array $fields, array $expand)
     {
-        $fields = $this->extractFields($fields);
-        $expand = $this->extractFields($expand);
+        $fields = $this->extractRootFields($fields);
+        $expand = $this->extractRootFields($expand);
         $result = [];
 
         foreach ($this->fields() as $field => $definition) {
