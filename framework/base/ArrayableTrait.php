@@ -110,12 +110,12 @@ trait ArrayableTrait
      *
      * @param array $fields the fields being requested.
      * If empty or if it contains '*', all fields as specified by [[fields()]] will be returned.
-     * Fields can be nested, separeted with a dot (.): item.field-sub-field
-     * $recursive must be true for this to work. If $recursive is false, only th root fields will be extracted
+     * Fields can be nested, separeted with dots (.). e.g.: item.field.sub-field
+     * `$recursive` must be true for nested fields to be extracted. If `$recursive` is false, only the root fields will be extracted.
      * @param array $expand the additional fields being requested for exporting. Only fields declared in [[extraFields()]]
      * will be considered.
-     * Expand can also be nested, separeted with a dot (.): item.expand1.expand2
-     * $recursive must be true for this to work. If $recursive is false, only th root expands will be extracted
+     * Expand can also be nested, separeted with dots (.). e.g.: item.expand1.expand2
+     * `$recursive` must be true for nested expands to be extracted. If `$recursive` is false, only the root expands will be extracted.
      * @param bool $recursive whether to recursively return array representation of embedded objects.
      * @return array the array representation of the object
      */
@@ -157,11 +157,11 @@ trait ArrayableTrait
 
     /**
      * Extracts the root field names from nested fields.
-     * Nested fields are separated with dots (.).
-     * e.g: "item.id"
+     * Nested fields are separated with dots (.). e.g: "item.id"
+     * The previous example would extract "item".
      *
      * @param array $fields The fields requested for extraction
-     * @return array field names extracted from the fields
+     * @return array root fields extracted from the given nested fields
      */
     public function extractRootFields(array $fields)
     {
@@ -180,12 +180,12 @@ trait ArrayableTrait
 
     /**
      * Extract nested fields from a fields collection for a given root field
-     * Nested fields are separated with dots (.).
-     * e.g: "item.id"
+     * Nested fields are separated with dots (.). e.g: "item.id"
+     * The previous example would extract "id".
      *
      * @param array $fields The fields requested for extraction
      * @param string $rootField The root field for which we want to extract the nested fields
-     * @return array fields extracted for the given field
+     * @return array nested fields extracted for the given field
      */
     public function extractFieldsFor(array $fields, string $rootField)
     {
